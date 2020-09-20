@@ -1,4 +1,18 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import personService from './services/persons'
+import './index.css'
+
+const Notification = ({ message, type }) => {
+    if (message === null) {
+        return null
+    }
+
+    return (
+        <div className={type}>
+            {message}
+        </div>
+    )
+}
 
 const Filter = ({ filter, onChange }) => {
     return (
@@ -25,27 +39,37 @@ const PersonForm = (props) => {
 }
 
 //That filter isn't pretty, but It's very functional! -JK
-const Numbers = ({ persons, filter }) => {
+const Numbers = ({ persons, filter, handleDelete }) => {
     return (
         <div>
             {persons.filter(person => person.name.toLowerCase().includes(filter.toLowerCase())).map(person =>
-                <p>{person.name} {person.number}</p>
+                <p key={person.id}>{person.name} {person.number} <DeleteButton person={person} handleDelete={handleDelete}/></p>
             )}
         </div>
     )
 }
 
+const DeleteButton = ({ person, handleDelete }) => {
+    return (
+        <button onClick={() => handleDelete(person)} >delete</button>
+    )
+}
+
 const App = () => {
-    const [persons, setPersons] = useState([
-        { name: 'Joni Kopra', number: '040-1570595' },
-        { name: 'Arto Hellas', number: '040-123456' },
-        { name: 'Ada Lovelace', number: '39-44-5323523' },
-        { name: 'Dan Abramov', number: '12-43-234345' },
-        { name: 'Mary Poppendieck', number: '39-23-6423122' }
-    ])
+    const [ persons, setPersons] = useState([])
     const [ newName, setNewName ] = useState('')
     const [ newNumber, setNewNumber ] = useState('')
     const [ filter, setFilter ] = useState('')
+    const [ errorMessage, setErrorMessage ] = useState(null)
+    const [ messageType, setMessageType ] = useState('notif')
+
+    useEffect(() => {
+        personService
+            .getAll()
+            .then(response => {
+                setPersons(response.data)
+            })
+    }, [])
 
     const handleNameChange = (e) => {
         setNewName(e.target.value)
@@ -58,17 +82,57 @@ const App = () => {
     const handleFilterChange = (e) => {
         setFilter(e.target.value)
     }
+    
+    const handleDelete = (person) => {
+        const result = window.confirm(`Delete ${person.name}?`)
+        
+        if (result) {
+            personService
+                .remove(person.id)
+                .then(response => {
+                    const newPeopleList = persons.filter(p => p.name !== person.name)
+                    setPersons(newPeopleList)
+                    setErrorMessage()
+                })
+                .catch(error => {
+                    setErrorMessage(`${person.name} was already removed from the server`)
+                    setMessageType('error')
+                    setTimeout(() => setErrorMessage(null), 3000)
+                })
+        }
+    }
 
     const addPerson = (e) => {
         e.preventDefault()
         const newPerson = {name: newName, number: newNumber}
 
         if (persons.find(person => person.name === newName)) {
-            alert(`${newName} is already added to phonebook`)
+            const result = window.confirm(`${newName} is already added to phonebook, replace the old number with a new one?`)
+            if (result) {
+                const person = persons.find(p => p.name === newName)
+                personService
+                    .update(person.id, newPerson)
+                    .then(response => {
+                        setPersons(persons.concat(response.data))
+                        setNewName('')
+                        setNewNumber('')
+                        setErrorMessage(`Updated ${newPerson.name}`)
+                        setMessageType('notif')
+                        setTimeout(() => setErrorMessage(null), 3000)
+                    })
+            }
         } else {
-            setPersons(persons.concat(newPerson))
-            setNewName('')
-            setNewNumber('')
+
+            personService
+                .create(newPerson)
+                .then(response => {
+                    setPersons(persons.concat(response.data))
+                    setNewName('')
+                    setNewNumber('')
+                    setErrorMessage(`Added ${newPerson.name}`)
+                    setMessageType('notif')
+                    setTimeout(() => setErrorMessage(null), 3000)
+                })
         }
     }
 
@@ -76,11 +140,12 @@ const App = () => {
     return (
         <div>
             <h1>Phonebook</h1>
+            <Notification message={errorMessage} type={messageType} />
             <Filter value={filter} onChange={handleFilterChange} />
             <h2>add a new</h2>
-            <PersonForm addPerson={addPerson} newName={newName} newNumber={newNumber} handleNameChange={handleNameChange} handleNumberChange={handleNumberChange}  />
+            <PersonForm addPerson={addPerson} newName={newName} newNumber={newNumber} handleNameChange={handleNameChange} handleNumberChange={handleNumberChange} />
             <h2>Numbers</h2>
-            <Numbers persons={persons} filter={filter} />
+            <Numbers persons={persons} filter={filter} handleDelete={handleDelete} />
         </div>
     )
 }
